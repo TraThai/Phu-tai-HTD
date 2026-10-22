@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phụ tải HTĐ quốc gia</title>
+<meta name="description" content="Biểu đồ phụ tải hệ thống điện quốc gia theo chu kỳ 30 phút, số liệu NSMO, cập nhật hằng ngày.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+:root{
+  --bg:#f7f6f2;--panel:#ffffff;--fg:#1f1e1b;--muted:#6b6862;--line:#e4e1da;--grid:#eeebe5;--axis:#c9c5bc;
+  --c1:#1f6fd1;--c2:#d9822b;--c3:#2e9e6a;--c4:#8a5cc2;--mutedline:#c4c0b8;--ref:#9a968e;
+  --up:#b4442f;--down:#2e7d4f;--shadow:0 6px 24px rgba(0,0,0,.08);
+  --sans:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --serif:"Source Serif 4",Georgia,serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#161614;--panel:#1f1f1c;--fg:#ecebe6;--muted:#a19d95;--line:#33322e;--grid:#2a2926;--axis:#4a4843;
+    --c1:#5b9cf0;--c2:#f0a35a;--c3:#4fc28c;--c4:#b08ae6;--mutedline:#4d4b46;--ref:#7d7a73;--up:#f07a62;--down:#5ccf8a;--shadow:0 6px 24px rgba(0,0,0,.4)}
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:15px;line-height:1.45}
+.wrap{max-width:1240px;margin:0 auto;padding:24px 16px 48px;display:flex;flex-direction:column;gap:18px}
+h1{font-family:var(--serif);font-weight:400;font-size:clamp(1.6rem,3.2vw,2.2rem);margin:0;line-height:1.15}
+.sub{color:var(--muted);margin:6px 0 0;max-width:70ch}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.bar label{font-size:.85rem;color:var(--muted)}
+button,input[type=date]{font:inherit;font-size:.85rem;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--fg);cursor:pointer}
+input[type=date]{color-scheme:light dark}
+button[aria-pressed=true]{border-color:var(--fg);font-weight:600}
+button:disabled{opacity:.4;cursor:default}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,11rem),1fr));gap:12px}
+.card,.kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.kpi .lb{font-size:.8rem;color:var(--muted)}
+.kpi .v{font-family:var(--serif);font-size:1.9rem;font-variant-numeric:tabular-nums;margin-top:4px;line-height:1.1}
+.kpi .v small{font-family:var(--sans);font-size:.78rem;color:var(--muted);margin-left:4px}
+.kpi .n{font-size:.8rem;color:var(--muted);margin-top:6px;font-variant-numeric:tabular-nums}
+.up{color:var(--up)}.down{color:var(--down)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,30rem),1fr));gap:12px}
+.card h2{font-size:1.02rem;font-weight:600;margin:0}
+.card .note{font-size:.8rem;color:var(--muted);margin:4px 0 10px}
+.card .head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:8px}
+.chart{position:relative;min-height:300px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.8rem;color:var(--muted);margin-bottom:6px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px}
+.legend i.sq{width:10px;height:10px}
+.legend i.dash{background:repeating-linear-gradient(90deg,var(--mutedline) 0 4px,transparent 4px 7px)!important;height:2px}
+.tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);padding:6px 10px;font-size:.8rem;font-variant-numeric:tabular-nums;white-space:nowrap;display:none;z-index:5}
+.tip .h{color:var(--muted);margin-bottom:2px}
+.tip i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px}
+svg text{font-family:var(--sans)}
+.axis text{fill:var(--muted);font-size:11px}
+.axis path,.axis line{stroke:var(--axis)}
+.gridl line{stroke:var(--grid)}
+.gridl path{display:none}
+.tbl{overflow:auto;max-height:420px}
+table{width:100%;border-collapse:collapse;font-size:.85rem;font-variant-numeric:tabular-nums}
+th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:500;position:sticky;top:0;background:var(--panel)}
+tr.sel td{font-weight:600}
+footer{font-size:.8rem;color:var(--muted)}
+footer a{color:inherit}
+.msg{padding:40px 0;text-align:center;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Biểu đồ phụ tải hệ thống điện quốc gia</h1>
+    <p class="sub" id="takeaway">Đang tải số liệu…</p>
+  </header>
+
+  <div class="bar">
+    <button id="prev" aria-label="Ngày trước">‹</button>
+    <input type="date" id="pick" aria-label="Chọn ngày">
+    <button id="next" aria-label="Ngày sau">›</button>
+    <button id="last">Ngày mới nhất</button>
+  </div>
+
+  <section class="kpis" id="kpis"></section>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Biểu đồ phụ tải ngày – toàn quốc</h2>
+      <p class="note">Chu kỳ 30 phút, MW. So sánh với ngày trước đó và cùng thứ tuần trước.</p>
+      <div class="legend" id="lg1"></div>
+      <div class="chart" id="c1"></div>
+    </div>
+    <div class="card">
+      <h2>Phụ tải theo miền</h2>
+      <p class="note">Cột chồng Bắc – Trung – Nam, chu kỳ 30 phút, MW.</p>
+      <div class="legend" id="lg2"></div>
+      <div class="chart" id="c2"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="head">
+      <div>
+        <h2>Pmax – Pmin theo ngày</h2>
+        <p class="note">Toàn quốc, MW. Bấm vào biểu đồ để chọn ngày.</p>
+      </div>
+      <div class="bar" id="ranges"></div>
+    </div>
+    <div class="legend" id="lg3"></div>
+    <div class="chart" id="c3"></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Tổng hợp theo tháng</h2>
+      <p class="note">Pmax, Pmin toàn quốc trong tháng; điện năng tính từ biểu đồ 30 phút (ΣP × 0,5 h).</p>
+      <div class="tbl"><table id="tbm"><thead><tr>
+        <th>Tháng</th><th>Pmax (MW)</th><th>Ngày, giờ</th><th>Pmin (MW)</th><th>Ptb (MW)</th><th>A (GWh)</th><th>Số ngày</th>
+      </tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card">
+      <h2>Tổng hợp theo ngày</h2>
+      <p class="note">Bấm một dòng để chọn ngày.</p>
+      <div class="tbl"><table id="tbd"><thead><tr>
+        <th>Ngày</th><th>Pmax</th><th>Giờ</th><th>Pmin</th><th>Giờ</th><th>Ptb</th><th>A (GWh)</th><th>Ptb/Pmax</th>
+      </tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+
+  <footer id="foot">Nguồn số liệu: <a href="https://www.nsmo.vn/dashboard/tonghop" target="_blank" rel="noopener">NSMO – Công ty TNHH MTV Vận hành hệ thống điện và thị trường điện Quốc gia</a>.</footer>
+</div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const VI = d3.formatLocale({ decimal: ',', thousands: '.', grouping: [3], currency: ['', ' ₫'] });
+  const fmt0 = VI.format(',.0f'), fmt1 = VI.format(',.1f'), pct = VI.format('.1%');
+  const WD = ['CN','T2','T3','T4','T5','T6','T7'];
+  const toD = s => new Date(s + 'T00:00:00Z');
+  const wd = s => WD[toD(s).getUTCDay()];
+  const dm = s => s.slice(8,10) + '/' + s.slice(5,7);
+  const dmy = s => dm(s) + '/' + s.slice(0,4);
+  const addDays = (s,n) => { const d = toD(s); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); };
+  const hNum = g => { const [h,m] = g.split(':').map(Number); return h + m/60; };
+  const hLab = h => String(Math.floor(h)).padStart(2,'0') + ':' + String(Math.round((h%1)*60)).padStart(2,'0');
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const clean = g => g.attr('font-size', null).attr('font-family', null);
+  const REG = [['bac','Bắc','--c1'],['trung','Trung','--c2'],['nam','Nam','--c3']];
+  const RANGES = [['30N',30],['90N',90],['Từ đầu năm','ytd'],['Tất cả',0]];
+
+  let byDay, days, stats, statMap, sel, range = 90;
+
+  function tipAt(tip, box, html, x, y){
+    tip.innerHTML = html; tip.style.display = 'block';
+    const w = tip.offsetWidth, h = tip.offsetHeight, bw = box.clientWidth;
+    let left = x + 14; if (left + w > bw) left = x - w - 14; left = Math.max(0, left);
+    tip.style.left = left + 'px'; tip.style.top = Math.max(0, y - h/2) + 'px';
+  }
+
+  function computeStats(){
+    stats = days.map(ngay => {
+      const rs = byDay.get(ngay);
+      const mx = d3.greatest(rs, r => r.p), mn = d3.least(rs, r => r.p);
+      const s = d3.sum(rs, r => r.p);
+      return { ngay, pmax: mx.p, gmax: mx.gio, pmin: mn.p, gmin: mn.gio, ptb: s/rs.length, a: s*0.5/1000,
+        bacMax: d3.max(rs, r => r.bac), trungMax: d3.max(rs, r => r.trung), namMax: d3.max(rs, r => r.nam) };
+    });
+    statMap = new Map(stats.map(s => [s.ngay, s]));
+  }
+
+  function select(d){ if (!byDay.has(d)) return; sel = d; render(); }
+
+  function renderControls(){
+    const pick = $('pick');
+    pick.min = days[0]; pick.max = days[days.length-1]; pick.value = sel;
+    const i = days.indexOf(sel);
+    $('prev').disabled = i <= 0; $('next').disabled = i >= days.length - 1;
+    $('ranges').innerHTML = '';
+    RANGES.forEach(([lab, v]) => {
+      const b = document.createElement('button'); b.textContent = lab; b.setAttribute('aria-pressed', v === range);
+      b.onclick = () => { range = v; render(); };
+      $('ranges').appendChild(b);
+    });
+  }
+
+  function delta(cur, ref){
+    if (ref == null) return '';
+    const r = cur/ref - 1;
+    return `<span>${r >= 0 ? '+' : ''}${pct(r)}</span>`;
+  }
+
+  function renderKpis(){
+    const s = statMap.get(sel);
+    const w = statMap.get(addDays(sel, -7)), y = statMap.get(addDays(sel, -1));
+    const wl = w ? ` so với ${wd(w.ngay)} ${dm(w.ngay)}` : '';
+    const ytdMax = d3.greatest(stats.filter(x => x.ngay.slice(0,4) === sel.slice(0,4) && x.ngay <= sel), x => x.pmax);
+    const items = [
+      ['Pmax toàn quốc', fmt0(s.pmax), 'MW', `lúc ${s.gmax}${w ? ' · ' + delta(s.pmax, w.pmax) + wl : ''}`],
+      ['Pmin toàn quốc', fmt0(s.pmin), 'MW', `lúc ${s.gmin} · Pmin/Pmax ${pct(s.pmin/s.pmax)}`],
+      ['Ptb ngày', fmt0(s.ptb), 'MW', `Ptb/Pmax ${pct(s.ptb/s.pmax)}`],
+      ['Điện năng ngày', fmt1(s.a), 'GWh', y ? `${delta(s.a, y.a)} so với hôm trước` : ''],
+      ['Pmax miền Bắc', fmt0(s.bacMax), 'MW', `Miền Trung ${fmt0(s.trungMax)} · Miền Nam ${fmt0(s.namMax)}`],
+      ['Pmax từ đầu năm', fmt0(ytdMax.pmax), 'MW', `${wd(ytdMax.ngay)} ${dmy(ytdMax.ngay)} lúc ${ytdMax.gmax}`]
+    ];
+    $('kpis').innerHTML = items.map(([lb, v, u, n]) =>
+      `<div class="kpi"><div class="lb">${lb}</div><div class="v">${v}<small>${u}</small></div><div class="n">${n}</div></div>`).join('');
+    $('takeaway').innerHTML = `${wd(sel)}, ${dmy(sel)}: Pmax toàn quốc <b>${fmt0(s.pmax)} MW</b> lúc ${s.gmax}, Pmin ${fmt0(s.pmin)} MW lúc ${s.gmin}, điện năng ngày khoảng ${fmt1(s.a)} GWh.`;
+  }
+
+  function chartBox(el, H, m){
+    el.innerHTML = '';
+    const W = Math.max(300, el.clientWidth);
+    const svg = d3.select(el).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).style('display','block');
+    const tip = document.createElement('div'); tip.className = 'tip'; el.appendChild(tip);
+    return { W, svg, tip, sx: () => el.clientWidth / W };
+  }
+
+  function yAxes(svg, y, W, H, m){
+    svg.append('g').attr('class','gridl').attr('transform',`translate(${m.l},0)`)
+      .call(d3.axisLeft(y).ticks(5).tickSize(-(W-m.l-m.r)).tickFormat('')).call(clean);
+    svg.append('g').attr('class','axis').attr('transform',`translate(${m.l},0)`)
+      .call(d3.axisLeft(y).ticks(5).tickFormat(fmt0)).call(clean);
+  }
+
+  function chartDay(){
+    const el = $('c1'), H = 300, m = {t:14,r:16,b:28,l:58};
+    const { W, svg, tip, sx } = chartBox(el, H, m);
+    const series = [
+      { d: addDays(sel,-7), lab: `${wd(addDays(sel,-7))} ${dm(addDays(sel,-7))} (tuần trước)`, col: cssv('--mutedline'), dash: '4 3', w: 1.5 },
+      { d: addDays(sel,-1), lab: `${wd(addDays(sel,-1))} ${dm(addDays(sel,-1))}`, col: cssv('--ref'), dash: null, w: 1.5 },
+      { d: sel, lab: `${wd(sel)} ${dm(sel)}`, col: cssv('--c1'), dash: null, w: 2.5 }
+    ].filter(s => byDay.has(s.d));
+    const all = series.flatMap(s => byDay.get(s.d));
+    const x = d3.scaleLinear([0.5, 24], [m.l, W - m.r]);
+    const y = d3.scaleLinear([d3.min(all, r => r.p) * 0.95, d3.max(all, r => r.p) * 1.03], [H - m.b, m.t]).nice();
+    yAxes(svg, y, W, H, m);
+    svg.append('g').attr('class','axis').attr('transform',`translate(0,${H-m.b})`)
+      .call(d3.axisBottom(x).tickValues(W < 520 ? [4,8,12,16,20,24] : d3.range(2,25,2)).tickFormat(hLab)).call(clean);
+    const line = d3.line().x(r => x(r.h)).y(r => y(r.p));
+    series.forEach(s => svg.append('path').datum(byDay.get(s.d)).attr('d', line).attr('fill','none')
+      .attr('stroke', s.col).attr('stroke-width', s.w).attr('stroke-dasharray', s.dash)
+      .attr('stroke-linejoin','round').attr('stroke-linecap','round'));
+    const cur = byDay.get(sel), st = statMap.get(sel);
+    [[d3.greatest(cur, r => r.p), 'Pmax', -9], [d3.least(cur, r => r.p), 'Pmin', 17]].forEach(([r, t, dy]) => {
+      svg.append('circle').attr('cx', x(r.h)).attr('cy', y(r.p)).attr('r', 4).attr('fill', cssv('--c1'));
+      const tx = svg.append('text').attr('y', y(r.p) + dy).attr('text-anchor','middle').attr('font-size', 12)
+        .attr('fill', cssv('--fg')).text(`${t} ${fmt0(r.p)}`);
+      const w = tx.node().getComputedTextLength();
+      tx.attr('x', Math.max(m.l + w/2, Math.min(W - m.r - w/2, x(r.h))));
+    });
+    $('lg1').innerHTML = series.slice().reverse().map(s =>
+      `<span><i class="${s.dash ? 'dash' : ''}" style="background:${s.col}"></i>${esc(s.lab)}</span>`).join('');
+    const rule = svg.append('line').attr('y1', m.t).attr('y2', H - m.b).attr('stroke', cssv('--axis')).style('display','none');
+    const dots = series.map(s => svg.append('circle').attr('r', 3.5).attr('fill', s.col).style('display','none'));
+    svg.append('rect').attr('x', m.l).attr('y', m.t).attr('width', W-m.l-m.r).attr('height', H-m.t-m.b).attr('fill','transparent')
+      .on('mousemove', ev => {
+        const h = x.invert(d3.pointer(ev)[0]);
+        const r0 = d3.least(cur, r => Math.abs(r.h - h)); if (!r0) return;
+        rule.attr('x1', x(r0.h)).attr('x2', x(r0.h)).style('display', null);
+        let html = `<div class="h">${esc(r0.gio)}</div>`;
+        series.slice().reverse().forEach((s, i) => {
+          const r = byDay.get(s.d).find(q => q.gio === r0.gio); if (!r) return;
+          dots[series.length-1-i].attr('cx', x(r.h)).attr('cy', y(r.p)).style('display', null);
+          html += `<div><i style="background:${s.col}"></i>${esc(s.lab)}: ${fmt0(r.p)} MW</div>`;
+        });
+        tipAt(tip, el, html, x(r0.h) * sx(), y(r0.p) * sx());
+      })
+      .on('mouseleave', () => { tip.style.display='none'; rule.style('display','none'); dots.forEach(d => d.style('display','none')); });
+  }
+
+  function chartRegion(){
+    const el = $('c2'), H = 300, m = {t:14,r:16,b:28,l:58};
+    const { W, svg, tip, sx } = chartBox(el, H, m);
+    const cur = byDay.get(sel);
+    const x = d3.scaleBand(cur.map(r => r.gio), [m.l, W - m.r]).padding(0.18);
+    const stk = d3.stack().keys(REG.map(k => k[0])).value((r, k) => r[k] || 0)(cur);
+    const y = d3.scaleLinear([0, d3.max(cur, r => r.bac + r.trung + r.nam) * 1.05], [H - m.b, m.t]).nice();
+    yAxes(svg, y, W, H, m);
+    const every = W < 520 ? 8 : 4;
+    svg.append('g').attr('class','axis').attr('transform',`translate(0,${H-m.b})`)
+      .call(d3.axisBottom(x).tickValues(cur.map(r => r.gio).filter((g, i) => (i+1) % every === 0))).call(clean);
+    stk.forEach((s, i) => svg.append('g').attr('fill', cssv(REG[i][2])).selectAll('rect').data(s).join('rect')
+      .attr('x', d => x(d.data.gio)).attr('width', x.bandwidth())
+      .attr('y', d => y(d[1])).attr('height', d => Math.max(0, y(d[0]) - y(d[1]))));
+    $('lg2').innerHTML = REG.map(k => `<span><i class="sq" style="background:${cssv(k[2])}"></i>${k[1]}</span>`).join('');
+    svg.append('g').selectAll('rect').data(cur).join('rect')
+      .attr('x', d => x(d.gio) - x.step()*x.padding()/2).attr('width', x.step()).attr('y', m.t).attr('height', H-m.t-m.b)
+      .attr('fill','transparent')
+      .on('mousemove', (ev, d) => {
+        const [px, py] = d3.pointer(ev, el);
+        tipAt(tip, el, `<div class="h">${esc(d.gio)}</div>` +
+          REG.map(k => `<div><i style="background:${cssv(k[2])}"></i>${k[1]}: ${fmt0(d[k[0]])} MW</div>`).join('') +
+          `<div>Tổng 3 miền: ${fmt0(d.bac + d.trung + d.nam)} MW</div><div>Toàn quốc: ${fmt0(d.p)} MW</div>`, px, py);
+      })
+      .on('mouseleave', () => { tip.style.display = 'none'; });
+  }
+
+  function rangeStats(){
+    if (range === 0) return stats;
+    if (range === 'ytd') return stats.filter(s => s.ngay.slice(0,4) === sel.slice(0,4) && s.ngay <= sel);
+    const end = sel, start = addDays(sel, -(range - 1));
+    return stats.filter(s => s.ngay >= start && s.ngay <= end);
+  }
+
+  function chartTrend(){
+    const el = $('c3'), H = 300, m = {t:14,r:16,b:28,l:58};
+    const { W, svg, tip, sx } = chartBox(el, H, m);
+    const st = rangeStats().map(s => ({ ...s, dt: toD(s.ngay) }));
+    if (!st.length) return;
+    const x = d3.scaleUtc(d3.extent(st, s => s.dt), [m.l, W - m.r]);
+    const y = d3.scaleLinear([d3.min(st, s => s.pmin) * 0.93, d3.max(st, s => s.pmax) * 1.04], [H - m.b, m.t]).nice();
+    yAxes(svg, y, W, H, m);
+    const span = (st[st.length-1].dt - st[0].dt) / 864e5;
+    svg.append('g').attr('class','axis').attr('transform',`translate(0,${H-m.b})`)
+      .call(d3.axisBottom(x).ticks(W < 520 ? 4 : 8).tickFormat(span > 120 ? d3.utcFormat('%m/%Y') : d3.utcFormat('%d/%m'))).call(clean);
+    svg.append('path').datum(st).attr('fill', cssv('--c1')).attr('opacity', 0.08)
+      .attr('d', d3.area().x(s => x(s.dt)).y0(s => y(s.pmin)).y1(s => y(s.pmax)));
+    [['pmax','--c1','Pmax'],['pmin','--c4','Pmin']].forEach(([k, c]) =>
+      svg.append('path').datum(st).attr('fill','none').attr('stroke', cssv(c)).attr('stroke-width', 2)
+        .attr('stroke-linejoin','round').attr('stroke-linecap','round').attr('d', d3.line().x(s => x(s.dt)).y(s => y(s[k]))));
+    const cs = st.find(s => s.ngay === sel);
+    if (cs) {
+      svg.append('line').attr('x1', x(cs.dt)).attr('x2', x(cs.dt)).attr('y1', m.t).attr('y2', H-m.b)
+        .attr('stroke', cssv('--ref')).attr('stroke-dasharray','3 3');
+      svg.append('circle').attr('cx', x(cs.dt)).attr('cy', y(cs.pmax)).attr('r', 4).attr('fill', cssv('--c1'));
+      svg.append('circle').attr('cx', x(cs.dt)).attr('cy', y(cs.pmin)).attr('r', 4).attr('fill', cssv('--c4'));
+    }
+    $('lg3').innerHTML = `<span><i style="background:${cssv('--c1')}"></i>Pmax</span><span><i style="background:${cssv('--c4')}"></i>Pmin</span>`;
+    const rule = svg.append('line').attr('y1', m.t).attr('y2', H-m.b).attr('stroke', cssv('--axis')).style('display','none');
+    const d1 = svg.append('circle').attr('r', 3.5).attr('fill', cssv('--c1')).style('display','none');
+    const d2 = svg.append('circle').attr('r', 3.5).attr('fill', cssv('--c4')).style('display','none');
+    const near = ev => { const t = x.invert(d3.pointer(ev)[0]); return d3.least(st, s => Math.abs(s.dt - t)); };
+    svg.append('rect').attr('x', m.l).attr('y', m.t).attr('width', W-m.l-m.r).attr('height', H-m.t-m.b)
+      .attr('fill','transparent').style('cursor','pointer')
+      .on('mousemove', ev => {
+        const s = near(ev); if (!s) return;
+        rule.attr('x1', x(s.dt)).attr('x2', x(s.dt)).style('display', null);
+        d1.attr('cx', x(s.dt)).attr('cy', y(s.pmax)).style('display', null);
+        d2.attr('cx', x(s.dt)).attr('cy', y(s.pmin)).style('display', null);
+        tipAt(tip, el, `<div class="h">${wd(s.ngay)} ${dmy(s.ngay)}</div>` +
+          `<div><i style="background:${cssv('--c1')}"></i>Pmax: ${fmt0(s.pmax)} MW (${s.gmax})</div>` +
+          `<div><i style="background:${cssv('--c4')}"></i>Pmin: ${fmt0(s.pmin)} MW (${s.gmin})</div>` +
+          `<div>A: ${fmt1(s.a)} GWh</div>`, x(s.dt) * sx(), y(s.pmax) * sx());
+      })
+      .on('mouseleave', () => { tip.style.display='none'; rule.style('display','none'); d1.style('display','none'); d2.style('display','none'); })
+      .on('click', ev => { const s = near(ev); if (s) select(s.ngay); });
+  }
+
+  function renderTables(){
+    const months = d3.groups(stats, s => s.ngay.slice(0,7)).sort((a, b) => d3.descending(a[0], b[0]));
+    $('tbm').querySelector('tbody').innerHTML = months.map(([mo, ss]) => {
+      const mx = d3.greatest(ss, s => s.pmax), mn = d3.least(ss, s => s.pmin);
+      const ptb = d3.sum(ss, s => s.ptb) / ss.length;
+      const cls = mo === sel.slice(0,7) ? ' class="sel"' : '';
+      return `<tr${cls}><td>${mo.slice(5)}/${mo.slice(0,4)}</td><td>${fmt0(mx.pmax)}</td><td>${dm(mx.ngay)} ${mx.gmax}</td>` +
+        `<td>${fmt0(mn.pmin)}</td><td>${fmt0(ptb)}</td><td>${fmt0(d3.sum(ss, s => s.a))}</td><td>${ss.length}</td></tr>`;
+    }).join('');
+    const tb = $('tbd').querySelector('tbody'); tb.innerHTML = '';
+    stats.slice().reverse().forEach(s => {
+      const tr = document.createElement('tr'); if (s.ngay === sel) tr.className = 'sel';
+      tr.style.cursor = 'pointer'; tr.onclick = () => select(s.ngay);
+      [`${wd(s.ngay)} ${dmy(s.ngay)}`, fmt0(s.pmax), s.gmax, fmt0(s.pmin), s.gmin, fmt0(s.ptb), fmt1(s.a), pct(s.ptb/s.pmax)]
+        .forEach(v => { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+  }
+
+  function render(){
+    renderControls(); renderKpis(); chartDay(); chartRegion(); chartTrend(); renderTables();
+  }
+
+  $('pick').addEventListener('change', e => { const v = e.target.value; if (byDay.has(v)) select(v); else e.target.value = sel; });
+  $('prev').onclick = () => select(days[days.indexOf(sel) - 1]);
+  $('next').onclick = () => select(days[days.indexOf(sel) + 1]);
+  $('last').onclick = () => select(days[days.length - 1]);
+
+  let rt; const ro = new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => byDay && render(), 120); });
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => byDay && render());
+
+  const bust = '?t=' + Math.floor(Date.now() / 6e5);
+  Promise.all([
+    d3.csv('data/phu_tai.csv' + bust),
+    d3.json('data/meta.json' + bust).catch(() => null)
+  ]).then(([raw, meta]) => {
+    const rows = raw.map(r => ({
+      ngay: r.ngay, gio: r.gio, h: hNum(r.gio), p: +r.quoc_gia_MW,
+      bac: +r.bac_MW || 0, trung: +r.trung_MW || 0, nam: +r.nam_MW || 0
+    })).filter(r => r.p > 0);
+    byDay = d3.group(rows, r => r.ngay);
+    days = Array.from(byDay.keys()).sort();
+    if (!days.length) throw new Error('Không có số liệu');
+    computeStats();
+    const q = new URLSearchParams(location.search).get('ngay');
+    sel = q && byDay.has(q) ? q : days[days.length - 1];
+    render();
+    ro.observe(document.querySelector('.wrap'));
+    const upd = meta && meta.cap_nhat_luc ? ` Cập nhật lúc ${meta.cap_nhat_luc.slice(11,16)} ngày ${dmy(meta.cap_nhat_luc.slice(0,10))}.` : '';
+    $('foot').insertAdjacentHTML('beforeend', ` Số liệu từ ${dmy(days[0])} đến ${dmy(days[days.length-1])} (${days.length} ngày).${upd} Tổng 3 miền có thể lệch nhỏ so với số toàn quốc do hai nguồn số liệu khác nhau trên trang NSMO.`);
+  }).catch(err => {
+    $('takeaway').textContent = 'Không tải được số liệu: ' + err.message;
+  });
+})();
+</script>
+</body>
+</html>
