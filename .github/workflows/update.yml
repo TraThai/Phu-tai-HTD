@@ -5,6 +5,11 @@ on:
     - cron: "17 2 * * *"   # 09:17 giờ VN
     - cron: "47 5 * * *"   # 12:47 giờ VN – chạy bù nếu sáng NSMO chưa có số liệu
   workflow_dispatch:
+    inputs:
+      tu_ngay:
+        description: "Lấy/bù số liệu từ ngày (yyyy-mm-dd)"
+        required: false
+        default: "2026-01-01"
   push:
     branches: [main]
     paths: ["docs/**"]
@@ -30,6 +35,7 @@ jobs:
     env:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: "utf-8"
+      NSMO_START: ${{ github.event.inputs.tu_ngay || '2026-01-01' }}
     steps:
       - uses: actions/checkout@v4
         with:
