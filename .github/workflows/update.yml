@@ -59,6 +59,12 @@ jobs:
           }
           exit 0
 
+      - name: Xuat Excel vao OneDrive
+        continue-on-error: true
+        env:
+          EXCEL_DIR: 'D:\OneDrive\P.HTD\3. Planning\Hien huu\So lieu Web NSMO'
+        run: python -u scripts/export_excel.py
+
   # Bước 2: đăng trang lên GitHub Pages (máy của GitHub).
   deploy:
     needs: fetch
