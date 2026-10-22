@@ -19,35 +19,52 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  update:
+  # Bước 1: lấy số liệu trên máy Windows tại VN (self-hosted runner), vì NSMO chặn máy chủ nước ngoài.
+  fetch:
+    if: github.event_name != 'push'
+    runs-on: self-hosted
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: powershell
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Lay so lieu tu NSMO
+        run: python -u scripts/fetch_nsmo.py
+
+      - name: Commit so lieu moi
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "Cap nhat phu tai $(Get-Date -Format yyyy-MM-dd)"
+            git push
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          } else {
+            Write-Output "Khong co thay doi."
+          }
+          exit 0
+
+  # Bước 2: đăng trang lên GitHub Pages (máy của GitHub).
+  deploy:
+    needs: fetch
+    if: always() && (needs.fetch.result == 'success' || needs.fetch.result == 'skipped')
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-
-      - name: Lay so lieu tu NSMO
-        if: github.event_name != 'push'
-        run: python scripts/fetch_nsmo.py
-
-      - name: Commit so lieu moi
-        if: github.event_name != 'push'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/data
-          if git diff --cached --quiet; then
-            echo "Khong co thay doi."
-          else
-            git commit -m "Cap nhat phu tai $(date -u +%Y-%m-%d)"
-            git push
-          fi
-
+          ref: main
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
