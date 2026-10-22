@@ -32,7 +32,7 @@ button,input[type=date]{font:inherit;font-size:.85rem;padding:6px 10px;border:1p
 input[type=date]{color-scheme:light dark}
 button[aria-pressed=true]{border-color:var(--fg);font-weight:600}
 button:disabled{opacity:.4;cursor:default}
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,11rem),1fr));gap:12px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,9.5rem),1fr));gap:12px}
 .card,.kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
 .kpi .lb{font-size:.8rem;color:var(--muted)}
 .kpi .v{font-family:var(--serif);font-size:1.9rem;font-variant-numeric:tabular-nums;margin-top:4px;line-height:1.1}
@@ -111,6 +111,33 @@ footer a{color:inherit}
     <div class="chart" id="c3"></div>
   </div>
 
+  <section id="sec-nguon" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="grid">
+      <div class="card">
+        <h2>Cơ cấu nguồn theo giờ</h2>
+        <p class="note">Công suất phát theo loại hình, chu kỳ 30 phút, MW (miền chồng).</p>
+        <div class="legend" id="lg4"></div>
+        <div class="chart" id="c4"></div>
+      </div>
+      <div class="card">
+        <h2>Sản lượng ngày theo loại hình</h2>
+        <p class="note">GWh và tỷ trọng trong tổng sản lượng phát của ngày chọn.</p>
+        <div class="chart" id="c5" style="min-height:0"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="head">
+        <div>
+          <h2>Sản lượng theo loại hình – theo ngày</h2>
+          <p class="note">Theo khoảng thời gian chọn ở biểu đồ Pmax – Pmin. Bấm vào biểu đồ để chọn ngày.</p>
+        </div>
+        <div class="bar" id="mixmode"></div>
+      </div>
+      <div class="legend" id="lg6"></div>
+      <div class="chart" id="c6"></div>
+    </div>
+  </section>
+
   <div class="grid">
     <div class="card">
       <h2>Tổng hợp theo tháng</h2>
@@ -151,6 +178,22 @@ footer a{color:inherit}
   const RANGES = [['30N',30],['90N',90],['Từ đầu năm','ytd'],['Tất cả',0]];
 
   let byDay, days, stats, statMap, sel, range = 90;
+  let ccDay = null, ccStat = null, mixPct = false;
+  const SRC = [
+    ['nd_than','Nhiệt điện than','#6b7a8f'],
+    ['tbk_khi','Tuabin khí (khí)','#e0a32b'],
+    ['tbk_dau','Tuabin khí (dầu)','#c4831a'],
+    ['nd_dau_fo','Nhiệt điện dầu FO','#9c6b3a'],
+    ['nd_dau_do','Nhiệt điện dầu DO','#7a5232'],
+    ['nd_khac','Nhiệt điện khác','#a8a196'],
+    ['thuy_dien','Thủy điện','#2f7fd1'],
+    ['nhap_khau_tq','Nhập khẩu TQ','#8a5cc2'],
+    ['sinh_khoi','Sinh khối','#6e9e3a'],
+    ['dien_gio','Điện gió','#22a99f'],
+    ['mt_farm','ĐMT trang trại','#f2c12e'],
+    ['mt_mai_nha','ĐMT mái nhà','#f5944a']
+  ];
+  const NLTT = ['sinh_khoi','dien_gio','mt_farm','mt_mai_nha'];
 
   function tipAt(tip, box, html, x, y){
     tip.innerHTML = html; tip.style.display = 'block';
@@ -204,6 +247,12 @@ footer a{color:inherit}
       ['Pmax miền Bắc', fmt0(s.bacMax), 'MW', `Miền Trung ${fmt0(s.trungMax)} · Miền Nam ${fmt0(s.namMax)}`],
       ['Pmax từ đầu năm', fmt0(ytdMax.pmax), 'MW', `${wd(ytdMax.ngay)} ${dmy(ytdMax.ngay)} lúc ${ytdMax.gmax}`]
     ];
+    const cs = ccStat && ccStat.get(sel);
+    if (cs) {
+      const sh = NLTT.reduce((a, k) => a + cs[k], 0) / cs.tot;
+      items.push(['Tỷ trọng NLTT', VI.format('.1f')(sh * 100), '%',
+        `Gió ${pct(cs.dien_gio/cs.tot)} · ĐMT ${pct((cs.mt_farm + cs.mt_mai_nha)/cs.tot)} · Thủy ${pct(cs.thuy_dien/cs.tot)}`]);
+    }
     $('kpis').innerHTML = items.map(([lb, v, u, n]) =>
       `<div class="kpi"><div class="lb">${lb}</div><div class="v">${v}<small>${u}</small></div><div class="n">${n}</div></div>`).join('');
     $('takeaway').innerHTML = `${wd(sel)}, ${dmy(sel)}: Pmax toàn quốc <b>${fmt0(s.pmax)} MW</b> lúc ${s.gmax}, Pmin ${fmt0(s.pmin)} MW lúc ${s.gmin}, điện năng ngày khoảng ${fmt1(s.a)} GWh.`;
@@ -367,8 +416,113 @@ footer a{color:inherit}
     });
   }
 
+  function chartMixHour(){
+    const el = $('c4'), H = 300, m = {t:14,r:16,b:28,l:58};
+    const cur = ccDay.get(sel);
+    if (!cur) { el.innerHTML = '<div class="msg">Chưa có số liệu cơ cấu nguồn cho ngày này.</div>'; $('lg4').innerHTML = ''; return; }
+    const { W, svg, tip, sx } = chartBox(el, H, m);
+    const keys = SRC.map(k => k[0]);
+    const stk = d3.stack().keys(keys).value((r, k) => Math.max(0, r[k] || 0))(cur);
+    const x = d3.scaleLinear([0.5, 24], [m.l, W - m.r]);
+    const y = d3.scaleLinear([0, d3.max(stk[stk.length-1], d => d[1]) * 1.05], [H - m.b, m.t]).nice();
+    yAxes(svg, y, W, H, m);
+    svg.append('g').attr('class','axis').attr('transform',`translate(0,${H-m.b})`)
+      .call(d3.axisBottom(x).tickValues(W < 520 ? [4,8,12,16,20,24] : d3.range(2,25,2)).tickFormat(hLab)).call(clean);
+    const area = d3.area().x(d => x(d.data.h)).y0(d => y(d[0])).y1(d => y(d[1]));
+    stk.forEach((s, i) => svg.append('path').datum(s).attr('d', area).attr('fill', SRC[i][2]).attr('opacity', 0.9));
+    const pt = byDay.get(sel);
+    if (pt) svg.append('path').datum(pt).attr('fill','none').attr('stroke', cssv('--fg')).attr('stroke-width', 1.5)
+      .attr('stroke-dasharray','4 3').attr('d', d3.line().x(r => x(r.h)).y(r => y(r.p)));
+    $('lg4').innerHTML = SRC.slice().reverse().filter(k => d3.max(cur, r => r[k[0]]) > 0.5)
+      .map(k => `<span><i class="sq" style="background:${k[2]}"></i>${k[1]}</span>`).join('') +
+      (pt ? `<span><i class="dash" style="background:${cssv('--fg')}"></i>Phụ tải toàn quốc</span>` : '');
+    const rule = svg.append('line').attr('y1', m.t).attr('y2', H-m.b).attr('stroke', cssv('--axis')).style('display','none');
+    svg.append('rect').attr('x', m.l).attr('y', m.t).attr('width', W-m.l-m.r).attr('height', H-m.t-m.b).attr('fill','transparent')
+      .on('mousemove', ev => {
+        const h = x.invert(d3.pointer(ev)[0]);
+        const r = d3.least(cur, q => Math.abs(q.h - h)); if (!r) return;
+        rule.attr('x1', x(r.h)).attr('x2', x(r.h)).style('display', null);
+        const tot = d3.sum(keys, k => Math.max(0, r[k] || 0));
+        const p = pt && pt.find(q => q.gio === r.gio);
+        const html = `<div class="h">${esc(r.gio)} · tổng phát ${fmt0(tot)} MW${p ? ` · phụ tải ${fmt0(p.p)} MW` : ''}</div>` +
+          SRC.slice().reverse().filter(k => (r[k[0]] || 0) > 0.5)
+            .map(k => `<div><i style="background:${k[2]}"></i>${k[1]}: ${fmt0(r[k[0]])} MW (${pct(r[k[0]]/tot)})</div>`).join('');
+        tipAt(tip, el, html, x(r.h) * sx(), m.t * sx() + 60);
+      })
+      .on('mouseleave', () => { tip.style.display='none'; rule.style('display','none'); });
+  }
+
+  function chartMixDay(){
+    const el = $('c5'); el.innerHTML = '';
+    const cs = ccStat.get(sel);
+    if (!cs) { el.innerHTML = '<div class="msg">Chưa có số liệu.</div>'; return; }
+    const rows = SRC.map(k => ({ k: k[0], lab: k[1], col: k[2], v: cs[k[0]] })).filter(r => r.v > 0.05)
+      .sort((a, b) => b.v - a.v);
+    const W = Math.max(300, el.clientWidth), rh = 26, m = {t:4,r:135,b:4,l:130}, H = m.t + m.b + rows.length * rh;
+    const svg = d3.select(el).append('svg').attr('width','100%').attr('viewBox',`0 0 ${W} ${H}`).style('display','block');
+    const x = d3.scaleLinear([0, d3.max(rows, r => r.v)], [m.l, W - m.r]);
+    const g = svg.selectAll('g').data(rows).join('g').attr('transform', (r, i) => `translate(0,${m.t + i * rh})`);
+    g.append('text').attr('x', m.l - 8).attr('y', rh/2).attr('dy','0.35em').attr('text-anchor','end')
+      .attr('font-size', 12).attr('fill', cssv('--fg')).text(r => r.lab);
+    g.append('rect').attr('x', m.l).attr('y', 5).attr('height', rh - 10).attr('rx', 4)
+      .attr('width', r => Math.max(1, x(r.v) - m.l)).attr('fill', r => r.col);
+    g.append('text').attr('x', r => x(r.v) + 6).attr('y', rh/2).attr('dy','0.35em').attr('font-size', 12)
+      .attr('fill', cssv('--muted')).text(r => `${fmt1(r.v)} GWh · ${pct(r.v/cs.tot)}`);
+    el.insertAdjacentHTML('beforeend', `<div class="note" style="margin-top:6px">Tổng sản lượng phát: ${fmt1(cs.tot)} GWh.</div>`);
+  }
+
+  function chartMixTrend(){
+    const el = $('c6'), H = 320, m = {t:14,r:16,b:28,l:58};
+    $('mixmode').innerHTML = '';
+    [['GWh', false], ['%', true]].forEach(([lab, v]) => {
+      const b = document.createElement('button'); b.textContent = lab; b.setAttribute('aria-pressed', v === mixPct);
+      b.onclick = () => { mixPct = v; chartMixTrend(); }; $('mixmode').appendChild(b);
+    });
+    const ds = new Set(rangeStats().map(s => s.ngay));
+    const st = Array.from(ccStat.values()).filter(s => ds.has(s.ngay)).sort((a, b) => d3.ascending(a.ngay, b.ngay))
+      .map(s => ({ ...s, dt: toD(s.ngay) }));
+    if (st.length < 2) { el.innerHTML = '<div class="msg">Chưa đủ số liệu cơ cấu nguồn trong khoảng này.</div>'; $('lg6').innerHTML=''; return; }
+    const { W, svg, tip, sx } = chartBox(el, H, m);
+    const keys = SRC.map(k => k[0]);
+    const val = (s, k) => mixPct ? s[k] / s.tot * 100 : s[k];
+    const stk = d3.stack().keys(keys).value((s, k) => Math.max(0, val(s, k)))(st);
+    const x = d3.scaleUtc(d3.extent(st, s => s.dt), [m.l, W - m.r]);
+    const y = d3.scaleLinear([0, mixPct ? 100 : d3.max(stk[stk.length-1], d => d[1]) * 1.05], [H - m.b, m.t]);
+    if (!mixPct) y.nice();
+    svg.append('g').attr('class','gridl').attr('transform',`translate(${m.l},0)`)
+      .call(d3.axisLeft(y).ticks(5).tickSize(-(W-m.l-m.r)).tickFormat('')).call(clean);
+    svg.append('g').attr('class','axis').attr('transform',`translate(${m.l},0)`)
+      .call(d3.axisLeft(y).ticks(5).tickFormat(v => mixPct ? v + '%' : fmt0(v))).call(clean);
+    const span = (st[st.length-1].dt - st[0].dt) / 864e5;
+    svg.append('g').attr('class','axis').attr('transform',`translate(0,${H-m.b})`)
+      .call(d3.axisBottom(x).ticks(W < 520 ? 4 : 8).tickFormat(span > 120 ? d3.utcFormat('%m/%Y') : d3.utcFormat('%d/%m'))).call(clean);
+    const area = d3.area().x(d => x(d.data.dt)).y0(d => y(d[0])).y1(d => y(d[1]));
+    stk.forEach((s, i) => svg.append('path').datum(s).attr('d', area).attr('fill', SRC[i][2]).attr('opacity', 0.9));
+    const cur = st.find(s => s.ngay === sel);
+    if (cur) svg.append('line').attr('x1', x(cur.dt)).attr('x2', x(cur.dt)).attr('y1', m.t).attr('y2', H-m.b)
+      .attr('stroke', cssv('--fg')).attr('stroke-dasharray','3 3');
+    $('lg6').innerHTML = SRC.slice().reverse().filter(k => d3.max(st, s => s[k[0]]) > 0.05)
+      .map(k => `<span><i class="sq" style="background:${k[2]}"></i>${k[1]}</span>`).join('');
+    const rule = svg.append('line').attr('y1', m.t).attr('y2', H-m.b).attr('stroke', cssv('--axis')).style('display','none');
+    const near = ev => { const t = x.invert(d3.pointer(ev)[0]); return d3.least(st, s => Math.abs(s.dt - t)); };
+    svg.append('rect').attr('x', m.l).attr('y', m.t).attr('width', W-m.l-m.r).attr('height', H-m.t-m.b)
+      .attr('fill','transparent').style('cursor','pointer')
+      .on('mousemove', ev => {
+        const s = near(ev); if (!s) return;
+        rule.attr('x1', x(s.dt)).attr('x2', x(s.dt)).style('display', null);
+        const html = `<div class="h">${wd(s.ngay)} ${dmy(s.ngay)} · tổng ${fmt1(s.tot)} GWh</div>` +
+          SRC.slice().reverse().filter(k => s[k[0]] > 0.05)
+            .map(k => `<div><i style="background:${k[2]}"></i>${k[1]}: ${fmt1(s[k[0]])} GWh (${pct(s[k[0]]/s.tot)})</div>`).join('');
+        tipAt(tip, el, html, x(s.dt) * sx(), m.t * sx() + 60);
+      })
+      .on('mouseleave', () => { tip.style.display='none'; rule.style('display','none'); })
+      .on('click', ev => { const s = near(ev); if (s) select(s.ngay); });
+  }
+
   function render(){
-    renderControls(); renderKpis(); chartDay(); chartRegion(); chartTrend(); renderTables();
+    renderControls(); renderKpis(); chartDay(); chartRegion(); chartTrend();
+    if (ccDay) { chartMixHour(); chartMixDay(); chartMixTrend(); }
+    renderTables();
   }
 
   $('pick').addEventListener('change', e => { const v = e.target.value; if (byDay.has(v)) select(v); else e.target.value = sel; });
@@ -382,8 +536,21 @@ footer a{color:inherit}
   const bust = '?t=' + Math.floor(Date.now() / 6e5);
   Promise.all([
     d3.csv('data/phu_tai.csv' + bust),
-    d3.json('data/meta.json' + bust).catch(() => null)
-  ]).then(([raw, meta]) => {
+    d3.json('data/meta.json' + bust).catch(() => null),
+    d3.csv('data/co_cau_nguon.csv' + bust).catch(() => null)
+  ]).then(([raw, meta, ccRaw]) => {
+    if (ccRaw && ccRaw.length) {
+      const keys = SRC.map(k => k[0]);
+      const cr = ccRaw.map(r => { const o = { ngay: r.ngay, gio: r.gio, h: hNum(r.gio) }; keys.forEach(k => o[k] = +r[k] || 0); return o; });
+      ccDay = d3.group(cr, r => r.ngay);
+      ccStat = new Map(Array.from(ccDay, ([ngay, rs]) => {
+        const o = { ngay };
+        keys.forEach(k => o[k] = d3.sum(rs, r => Math.max(0, r[k])) * 0.5 / 1000);
+        o.tot = d3.sum(keys, k => o[k]);
+        return [ngay, o];
+      }).filter(([, o]) => o.tot > 0));
+      $('sec-nguon').hidden = false;
+    } else { $('sec-nguon').style.display = 'none'; }
     const rows = raw.map(r => ({
       ngay: r.ngay, gio: r.gio, h: hNum(r.gio), p: +r.quoc_gia_MW,
       bac: +r.bac_MW || 0, trung: +r.trung_MW || 0, nam: +r.nam_MW || 0

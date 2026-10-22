@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-Lấy biểu đồ phụ tải HTĐ quốc gia (chu kỳ 30 phút) từ NSMO và ghi vào docs/data/phu_tai.csv.
+Lấy số liệu vận hành HTĐ quốc gia (chu kỳ 30 phút) từ NSMO, ghi vào docs/data/:
+  - phu_tai.csv      : phụ tải toàn quốc và theo miền Bắc/Trung/Nam (MW)
+  - co_cau_nguon.csv : công suất phát theo loại hình nguồn (MW)
 
-- Tự bù mọi ngày còn thiếu từ START đến hôm qua (giờ Việt Nam).
+- Tự bù mọi ngày còn thiếu từ START đến hôm qua (giờ Việt Nam), riêng cho từng file.
 - Lấy lại REFRESH_DAYS ngày gần nhất để cập nhật nếu NSMO hiệu chỉnh số liệu.
 - Chỉ dùng thư viện chuẩn của Python (>= 3.8).
 
@@ -13,7 +15,6 @@ Cách dùng:
 
 Nguồn: https://www.nsmo.vn/dashboard/tonghop (endpoint nội bộ của trang, không phải API công khai).
 """
-# Chạy được với Python >= 3.8
 import argparse
 import csv
 import json
@@ -25,21 +26,43 @@ import urllib.request
 from datetime import date, datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CSV_PATH = os.path.join(ROOT, "docs", "data", "phu_tai.csv")
-META_PATH = os.path.join(ROOT, "docs", "data", "meta.json")
+DATA = os.path.join(ROOT, "docs", "data")
+PT_PATH = os.path.join(DATA, "phu_tai.csv")
+CC_PATH = os.path.join(DATA, "co_cau_nguon.csv")
+META_PATH = os.path.join(DATA, "meta.json")
 
 BASE = "https://www.nsmo.vn"
 URL_QG = BASE + "/api/services/app/HomePage/GetBieuDoTuongQuanPT?day={d}"
 URL_MIEN = BASE + "/Dashboard/GetBcsxChartDataPhuTai?ngay={d}"
+URL_NGUON = BASE + "/Dashboard/GetBcsxChartDataCongSuatTheoLoaiHinh?ngay={d}"
 
-COLS = ["ngay", "gio", "quoc_gia_MW", "bac_MW", "trung_MW", "nam_MW"]
+PT_COLS = ["ngay", "gio", "quoc_gia_MW", "bac_MW", "trung_MW", "nam_MW"]
 MIEN = {"Bắc": "bac_MW", "Trung": "trung_MW", "Nam": "nam_MW"}
+
+# Tên loại hình trên NSMO -> tên cột (MW)
+NGUON = {
+    "Nhiệt điện than": "nd_than",
+    "Tuabin khí (GAS)": "tbk_khi",
+    "Tuabin khí (DO)": "tbk_dau",
+    "Nhiệt điện dầu FO": "nd_dau_fo",
+    "Nhiệt điện dầu DO": "nd_dau_do",
+    "Thủy điện": "thuy_dien",
+    "Mua TQ": "nhap_khau_tq",
+    "Sinh khối": "sinh_khoi",
+    "Gió": "dien_gio",
+    "Mặt trời farm": "mt_farm",
+    "ĐMTMN (ĐC)": "mt_mai_nha",
+    "Nhiệt điện khác": "nd_khac",
+}
+CC_COLS = ["ngay", "gio"] + list(NGUON.values())
+
 VN_TZ = timezone(timedelta(hours=7))
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (phu-tai-htd dashboard; +https://github.com)",
     "Accept": "application/json, text/plain, */*",
     "Referer": BASE + "/dashboard/tonghop",
 }
+WARNED = set()
 
 
 def get_json(url, retries=2):
@@ -55,9 +78,12 @@ def get_json(url, retries=2):
     raise RuntimeError(f"{url}: {last}")
 
 
-def fetch_day(d):
-    """Trả về list 48 dòng của ngày d, hoặc None nếu NSMO chưa có đủ số liệu."""
-    ds = urllib.parse.quote(d.strftime("%d/%m/%Y"), safe="")
+def hlab(hh):
+    return "24:00" if hh == "00:00" else hh
+
+
+def fetch_phu_tai(d, ds):
+    """48 dòng phụ tải của ngày d, hoặc None nếu NSMO chưa có đủ số liệu."""
     qg = get_json(URL_QG.format(d=ds))
     pts = (((qg or {}).get("result") or {}).get("data") or {}).get("phuTai") or []
     if len(pts) < 48:
@@ -74,11 +100,7 @@ def fetch_day(d):
     for p in pts:
         hh = p["thoiGian"][11:16]
         r = reg.get(hh, {})
-        row = {
-            "ngay": d.isoformat(),
-            "gio": "24:00" if hh == "00:00" else hh,
-            "quoc_gia_MW": p["congSuat"],
-        }
+        row = {"ngay": d.isoformat(), "gio": hlab(hh), "quoc_gia_MW": p["congSuat"]}
         for col in MIEN.values():
             v = r.get(col)
             row[col] = "" if v is None else round(float(v), 1)
@@ -86,6 +108,55 @@ def fetch_day(d):
     if any(float(r["quoc_gia_MW"] or 0) <= 0 for r in rows):
         return None
     return rows
+
+
+def fetch_co_cau(d, ds):
+    """48 dòng cơ cấu nguồn của ngày d, hoặc None nếu chưa có số liệu."""
+    res = get_json(URL_NGUON.format(d=ds)).get("result") or []
+    by_hour = {}
+    for s in res:
+        name = s.get("name")
+        col = NGUON.get(name)
+        if not col:
+            if name not in WARNED:
+                WARNED.add(name)
+                print(f"  Cảnh báo: loại hình mới chưa có cột: {name!r} (bỏ qua)", flush=True)
+            continue
+        for p in s.get("data") or []:
+            v = p.get("value")
+            by_hour.setdefault(p.get("hour"), {})[col] = "" if v is None else round(float(v), 1)
+    if len(by_hour) < 48:
+        return None
+    hours = sorted(by_hour, key=lambda h: (h == "00:00", h))
+    rows, tot = [], 0.0
+    for hh in hours:
+        r = {"ngay": d.isoformat(), "gio": hlab(hh)}
+        for col in NGUON.values():
+            v = by_hour[hh].get(col, "")
+            r[col] = v
+            tot += float(v or 0)
+        rows.append(r)
+    return rows if tot > 0 else None
+
+
+def load(path):
+    out = {}
+    if os.path.exists(path):
+        with open(path, newline="", encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                out.setdefault(r["ngay"], []).append(r)
+    return out
+
+
+def save(path, cols, by_day):
+    tmp = path + ".tmp"
+    with open(tmp, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=cols, lineterminator="\n")
+        w.writeheader()
+        for k in sorted(by_day):
+            for r in by_day[k]:
+                w.writerow({c: r.get(c, "") for c in cols})
+    os.replace(tmp, path)
 
 
 def main():
@@ -96,71 +167,72 @@ def main():
     ap.add_argument("--sleep", type=float, default=0.4)
     a = ap.parse_args()
 
-    by_day = {}
-    if os.path.exists(CSV_PATH):
-        with open(CSV_PATH, newline="", encoding="utf-8") as f:
-            for r in csv.DictReader(f):
-                by_day.setdefault(r["ngay"], []).append(r)
+    sets = {
+        "pt": {"path": PT_PATH, "cols": PT_COLS, "fn": fetch_phu_tai, "data": load(PT_PATH)},
+        "cc": {"path": CC_PATH, "cols": CC_COLS, "fn": fetch_co_cau, "data": load(CC_PATH)},
+    }
 
     yesterday = datetime.now(VN_TZ).date() - timedelta(days=1)
-    start = date.fromisoformat(a.start)
-    want, d = [], start
+    plan, d = [], date.fromisoformat(a.start)
     while d <= yesterday:
         k = d.isoformat()
-        if k not in by_day or len(by_day[k]) < 48 or (yesterday - d).days < a.refresh:
-            want.append(d)
+        need = [n for n, s in sets.items()
+                if k not in s["data"] or len(s["data"][k]) < 48 or (yesterday - d).days < a.refresh]
+        if need:
+            plan.append((d, need))
         d += timedelta(days=1)
-    want = want[-a.max_days:]
-    print(f"Cần lấy {len(want)} ngày (đến {yesterday.isoformat()}).")
+    plan = plan[-a.max_days:]
+    print(f"Cần lấy {len(plan)} ngày (đến {yesterday.isoformat()}).", flush=True)
 
-    ok, miss, err, streak = 0, [], [], 0
-    for i, d in enumerate(want, 1):
-        try:
-            rows = fetch_day(d)
-            streak = 0
-        except Exception as e:
-            err.append(f"{d}: {e}")
-            streak += 1
-            print("  lỗi", d, e, flush=True)
-            if streak >= 3:
-                print("Dừng: gọi NSMO lỗi 3 lần liên tiếp (mất mạng hoặc bị chặn).", flush=True)
-                break
-            continue
-        if i % 20 == 0 or i == len(want):
-            print(f"  {i}/{len(want)} ngày, đến {d.isoformat()}", flush=True)
-        if rows is None:
-            miss.append(d.isoformat())
-        else:
-            by_day[d.isoformat()] = rows
-            ok += 1
+    ok = {n: 0 for n in sets}
+    miss = {n: [] for n in sets}
+    err, streak = [], 0
+    for i, (d, need) in enumerate(plan, 1):
+        ds = urllib.parse.quote(d.strftime("%d/%m/%Y"), safe="")
+        failed = False
+        for n in need:
+            try:
+                rows = sets[n]["fn"](d, ds)
+            except Exception as e:
+                err.append(f"{d} {n}: {e}")
+                print("  lỗi", d, n, e, flush=True)
+                failed = True
+                continue
+            if rows is None:
+                miss[n].append(d.isoformat())
+            else:
+                sets[n]["data"][d.isoformat()] = rows
+                ok[n] += 1
+        streak = streak + 1 if failed else 0
+        if streak >= 3:
+            print("Dừng: gọi NSMO lỗi 3 ngày liên tiếp (mất mạng hoặc bị chặn).", flush=True)
+            break
+        if i % 20 == 0 or i == len(plan):
+            print(f"  {i}/{len(plan)} ngày, đến {d.isoformat()}", flush=True)
         time.sleep(a.sleep)
 
-    os.makedirs(os.path.dirname(CSV_PATH), exist_ok=True)
-    tmp = CSV_PATH + ".tmp"
-    with open(tmp, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=COLS, lineterminator="\n")
-        w.writeheader()
-        for k in sorted(by_day):
-            for r in by_day[k]:
-                w.writerow({c: r.get(c, "") for c in COLS})
-    os.replace(tmp, CSV_PATH)
-
-    days = sorted(by_day)
-    meta = {
-        "nguon": BASE + "/dashboard/tonghop",
-        "so_ngay": len(days),
-        "ngay_dau": days[0] if days else None,
-        "ngay_cuoi": days[-1] if days else None,
-        "cap_nhat_luc": datetime.now(VN_TZ).isoformat(timespec="minutes"),
-    }
+    os.makedirs(DATA, exist_ok=True)
+    meta = {"nguon": BASE + "/dashboard/tonghop",
+            "cap_nhat_luc": datetime.now(VN_TZ).isoformat(timespec="minutes")}
+    for n, s in sets.items():
+        save(s["path"], s["cols"], s["data"])
+        days = sorted(s["data"])
+        meta[os.path.basename(s["path"])] = {
+            "so_ngay": len(days),
+            "ngay_dau": days[0] if days else None,
+            "ngay_cuoi": days[-1] if days else None,
+        }
+    # Giữ khóa cũ cho trang web
+    meta["ngay_cuoi"] = meta["phu_tai.csv"]["ngay_cuoi"]
     with open(META_PATH, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
 
-    print(f"Đã lấy {ok} ngày; chưa có số liệu: {len(miss)}; lỗi: {len(err)}.")
-    if miss:
-        print("  Ngày NSMO chưa có đủ số liệu:", ", ".join(miss[:20]))
-    # Báo lỗi (để GitHub gửi email) khi mọi lần gọi đều thất bại: thường là bị chặn mạng.
-    if err and ok == 0:
+    print(f"Phụ tải: lấy {ok['pt']} ngày; Cơ cấu nguồn: lấy {ok['cc']} ngày; lỗi: {len(err)}.")
+    for n, lab in (("pt", "phụ tải"), ("cc", "cơ cấu nguồn")):
+        if miss[n]:
+            print(f"  Ngày NSMO chưa có đủ số liệu {lab}:", ", ".join(miss[n][:20]))
+    # Báo lỗi (để GitHub gửi email) khi mọi lần gọi đều thất bại: thường là mất mạng/bị chặn.
+    if err and sum(ok.values()) == 0:
         sys.exit(1)
 
 
