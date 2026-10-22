@@ -4,7 +4,7 @@ Lấy biểu đồ phụ tải HTĐ quốc gia (chu kỳ 30 phút) từ NSMO và
 
 - Tự bù mọi ngày còn thiếu từ START đến hôm qua (giờ Việt Nam).
 - Lấy lại REFRESH_DAYS ngày gần nhất để cập nhật nếu NSMO hiệu chỉnh số liệu.
-- Chỉ dùng thư viện chuẩn của Python (>= 3.9).
+- Chỉ dùng thư viện chuẩn của Python (>= 3.8).
 
 Cách dùng:
     python scripts/fetch_nsmo.py                 # bù ngày thiếu đến hôm qua
@@ -13,6 +13,7 @@ Cách dùng:
 
 Nguồn: https://www.nsmo.vn/dashboard/tonghop (endpoint nội bộ của trang, không phải API công khai).
 """
+# Chạy được với Python >= 3.8
 import argparse
 import csv
 import json
@@ -41,12 +42,12 @@ HEADERS = {
 }
 
 
-def get_json(url, retries=3):
+def get_json(url, retries=2):
     last = None
     for i in range(retries):
         try:
             req = urllib.request.Request(url, headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=40) as r:
+            with urllib.request.urlopen(req, timeout=20) as r:
                 return json.loads(r.read().decode("utf-8"))
         except Exception as e:  # mạng chập chờn, 5xx...
             last = e
@@ -112,14 +113,21 @@ def main():
     want = want[-a.max_days:]
     print(f"Cần lấy {len(want)} ngày (đến {yesterday.isoformat()}).")
 
-    ok, miss, err = 0, [], []
-    for d in want:
+    ok, miss, err, streak = 0, [], [], 0
+    for i, d in enumerate(want, 1):
         try:
             rows = fetch_day(d)
+            streak = 0
         except Exception as e:
             err.append(f"{d}: {e}")
-            print("  lỗi", d, e)
+            streak += 1
+            print("  lỗi", d, e, flush=True)
+            if streak >= 3:
+                print("Dừng: gọi NSMO lỗi 3 lần liên tiếp (mất mạng hoặc bị chặn).", flush=True)
+                break
             continue
+        if i % 20 == 0 or i == len(want):
+            print(f"  {i}/{len(want)} ngày, đến {d.isoformat()}", flush=True)
         if rows is None:
             miss.append(d.isoformat())
         else:
@@ -152,7 +160,7 @@ def main():
     if miss:
         print("  Ngày NSMO chưa có đủ số liệu:", ", ".join(miss[:20]))
     # Báo lỗi (để GitHub gửi email) khi mọi lần gọi đều thất bại: thường là bị chặn mạng.
-    if want and ok == 0 and err:
+    if err and ok == 0:
         sys.exit(1)
 
 
