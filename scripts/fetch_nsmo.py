@@ -19,6 +19,7 @@ import argparse
 import csv
 import json
 import os
+import socket
 import sys
 import time
 import urllib.parse
@@ -63,6 +64,7 @@ HEADERS = {
     "Referer": BASE + "/dashboard/tonghop",
 }
 WARNED = set()
+socket.setdefaulttimeout(25)
 
 
 def get_json(url, retries=2):
@@ -165,6 +167,8 @@ def main():
     ap.add_argument("--refresh", type=int, default=int(os.environ.get("REFRESH_DAYS", "2")))
     ap.add_argument("--max-days", type=int, default=500)
     ap.add_argument("--sleep", type=float, default=0.4)
+    ap.add_argument("--budget-min", type=float, default=float(os.environ.get("BUDGET_MIN", "40")),
+                    help="Hết thời gian này thì dừng, lưu phần đã lấy; lần chạy sau làm tiếp.")
     a = ap.parse_args()
 
     sets = {
@@ -182,13 +186,37 @@ def main():
             plan.append((d, need))
         d += timedelta(days=1)
     plan = plan[-a.max_days:]
+    # Ưu tiên các ngày gần nhất (hôm qua, ngày cần làm mới) trước, rồi mới bù lịch sử.
+    recent = [p for p in plan if (yesterday - p[0]).days <= max(a.refresh, 1)]
+    plan = recent + [p for p in plan if p not in recent]
     print(f"Cần lấy {len(plan)} ngày (đến {yesterday.isoformat()}).", flush=True)
 
+    def save_all():
+        os.makedirs(DATA, exist_ok=True)
+        meta = {"nguon": BASE + "/dashboard/tonghop",
+                "cap_nhat_luc": datetime.now(VN_TZ).isoformat(timespec="minutes")}
+        for n, s in sets.items():
+            save(s["path"], s["cols"], s["data"])
+            days = sorted(s["data"])
+            meta[os.path.basename(s["path"])] = {
+                "so_ngay": len(days),
+                "ngay_dau": days[0] if days else None,
+                "ngay_cuoi": days[-1] if days else None,
+            }
+        meta["ngay_cuoi"] = meta["phu_tai.csv"]["ngay_cuoi"]
+        with open(META_PATH, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=1)
+
+    t0 = time.time()
     ok = {n: 0 for n in sets}
     miss = {n: [] for n in sets}
     err, streak = [], 0
     for i, (d, need) in enumerate(plan, 1):
+        if time.time() - t0 > a.budget_min * 60:
+            print(f"Hết {a.budget_min:.0f} phút: dừng ở {d.isoformat()}, lưu phần đã lấy; lần chạy sau làm tiếp.", flush=True)
+            break
         ds = urllib.parse.quote(d.strftime("%d/%m/%Y"), safe="")
+        td = time.time()
         failed = False
         for n in need:
             try:
@@ -207,25 +235,15 @@ def main():
         if streak >= 3:
             print("Dừng: gọi NSMO lỗi 3 ngày liên tiếp (mất mạng hoặc bị chặn).", flush=True)
             break
+        if time.time() - td > 15:
+            print(f"  chậm: {d.isoformat()} mất {time.time() - td:.0f} s", flush=True)
         if i % 20 == 0 or i == len(plan):
-            print(f"  {i}/{len(plan)} ngày, đến {d.isoformat()}", flush=True)
+            print(f"  {i}/{len(plan)} ngày, đến {d.isoformat()} ({(time.time() - t0) / 60:.1f} phút)", flush=True)
+        if i % 10 == 0:
+            save_all()
         time.sleep(a.sleep)
 
-    os.makedirs(DATA, exist_ok=True)
-    meta = {"nguon": BASE + "/dashboard/tonghop",
-            "cap_nhat_luc": datetime.now(VN_TZ).isoformat(timespec="minutes")}
-    for n, s in sets.items():
-        save(s["path"], s["cols"], s["data"])
-        days = sorted(s["data"])
-        meta[os.path.basename(s["path"])] = {
-            "so_ngay": len(days),
-            "ngay_dau": days[0] if days else None,
-            "ngay_cuoi": days[-1] if days else None,
-        }
-    # Giữ khóa cũ cho trang web
-    meta["ngay_cuoi"] = meta["phu_tai.csv"]["ngay_cuoi"]
-    with open(META_PATH, "w", encoding="utf-8") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=1)
+    save_all()
 
     print(f"Phụ tải: lấy {ok['pt']} ngày; Cơ cấu nguồn: lấy {ok['cc']} ngày; lỗi: {len(err)}.")
     for n, lab in (("pt", "phụ tải"), ("cc", "cơ cấu nguồn")):
