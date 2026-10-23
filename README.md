@@ -8,7 +8,10 @@ Trang web tĩnh hiển thị biểu đồ phụ tải hệ thống điện quố
 .github/workflows/update.yml   Lịch chạy 09:17 và 12:47 (giờ VN): lấy số liệu → commit → đăng trang
 scripts/fetch_nsmo.py          Lấy số liệu NSMO, bù mọi ngày còn thiếu từ 01/01/2026, chỉ dùng thư viện chuẩn của Python
 docs/index.html                Trang dashboard (d3 v7)
-docs/data/phu_tai.csv          Số liệu: ngay, gio, quoc_gia_MW, bac_MW, trung_MW, nam_MW
+docs/data/phu_tai.csv          Số liệu: ngay, gio, quoc_gia_MW, bac_MW, trung_MW, nam_MW, quoc_gia_trangchu_MW
+                               Phụ tải toàn quốc và theo miền lấy theo BCSX (series "Quốc gia", "Bắc", "Trung", "Nam"
+                               của GetBcsxChartDataPhuTai); quoc_gia_trangchu_MW là biểu đồ trang chủ, chỉ tham khảo
+docs/data/co_cau_nguon.csv     Công suất phát theo loại hình (BCSX); loại hình mới chưa có cột ghi vào khac_chua_phan_loai
 docs/data/meta.json            Thời điểm cập nhật, khoảng ngày có số liệu
 ```
 
