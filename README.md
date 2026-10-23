@@ -8,9 +8,9 @@ Trang web tĩnh hiển thị biểu đồ phụ tải hệ thống điện quố
 .github/workflows/update.yml   Lịch chạy 09:17 và 12:47 (giờ VN): lấy số liệu → commit → đăng trang
 scripts/fetch_nsmo.py          Lấy số liệu NSMO, bù mọi ngày còn thiếu từ 01/01/2026, chỉ dùng thư viện chuẩn của Python
 docs/index.html                Trang dashboard (d3 v7)
-docs/data/phu_tai.csv          Số liệu: ngay, gio, quoc_gia_MW, bac_MW, trung_MW, nam_MW, quoc_gia_trangchu_MW
+docs/data/phu_tai.csv          Số liệu: ngay, gio, quoc_gia_MW, bac_MW, trung_MW, nam_MW
                                Phụ tải toàn quốc và theo miền lấy theo BCSX (series "Quốc gia", "Bắc", "Trung", "Nam"
-                               của GetBcsxChartDataPhuTai); quoc_gia_trangchu_MW là biểu đồ trang chủ, chỉ tham khảo
+                               của GetBcsxChartDataPhuTai)
 docs/data/co_cau_nguon.csv     Công suất phát theo loại hình (BCSX); loại hình mới chưa có cột ghi vào khac_chua_phan_loai
 docs/data/meta.json            Thời điểm cập nhật, khoảng ngày có số liệu
 ```
@@ -43,8 +43,8 @@ GitHub gửi email khi một lần chạy thất bại. Nguyên nhân thường 
   ```
   Sau đó upload file `docs/data/phu_tai.csv` lên repo (hoặc dùng `git push`). Nếu tình trạng này kéo dài, nên cài **self-hosted runner** trên một máy tại VN (Settings → Actions → Runners) và đổi `runs-on: ubuntu-latest` thành `runs-on: self-hosted`.
 - **NSMO đổi cấu trúc trang.** Script đang dùng hai endpoint nội bộ của trang tổng hợp (không phải API công khai):
-  - `/api/services/app/HomePage/GetBieuDoTuongQuanPT?day=dd/mm/yyyy`: toàn quốc
-  - `/Dashboard/GetBcsxChartDataPhuTai?ngay=dd/mm/yyyy`: theo miền
+  - `/Dashboard/GetBcsxChartDataPhuTai?ngay=dd/mm/yyyy`: phụ tải toàn quốc và theo miền (BCSX)
+  - `/Dashboard/GetBcsxChartDataCongSuatTheoLoaiHinh?ngay=dd/mm/yyyy`: cơ cấu nguồn (BCSX)
 
   Nếu endpoint đổi thì cần sửa `fetch_nsmo.py`.
 
