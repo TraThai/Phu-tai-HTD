@@ -191,7 +191,8 @@ footer a{color:inherit}
     ['sinh_khoi','Sinh khối','#6e9e3a'],
     ['dien_gio','Điện gió','#22a99f'],
     ['mt_farm','ĐMT trang trại','#f2c12e'],
-    ['mt_mai_nha','ĐMT mái nhà','#f5944a']
+    ['mt_mai_nha','ĐMT mái nhà','#f5944a'],
+    ['khac_chua_phan_loai','Khác (chưa phân loại)','#c9c3d6']
   ];
   const NLTT = ['sinh_khoi','dien_gio','mt_farm','mt_mai_nha'];
 
@@ -444,7 +445,7 @@ footer a{color:inherit}
         rule.attr('x1', x(r.h)).attr('x2', x(r.h)).style('display', null);
         const tot = d3.sum(keys, k => Math.max(0, r[k] || 0));
         const p = pt && pt.find(q => q.gio === r.gio);
-        const html = `<div class="h">${esc(r.gio)} · tổng phát ${fmt0(tot)} MW${p ? ` · phụ tải ${fmt0(p.p)} MW` : ''}</div>` +
+        const html = `<div class="h">${esc(r.gio)} · tổng phát ${fmt0(tot)} MW${p ? ` · phụ tải ${fmt0(p.p)} MW · chênh ${fmt0(tot - p.p)} MW` : ''}</div>` +
           SRC.slice().reverse().filter(k => (r[k[0]] || 0) > 0.5)
             .map(k => `<div><i style="background:${k[2]}"></i>${k[1]}: ${fmt0(r[k[0]])} MW (${pct(r[k[0]]/tot)})</div>`).join('');
         tipAt(tip, el, html, x(r.h) * sx(), m.t * sx() + 60);
