@@ -32,6 +32,7 @@ NGUON = OrderedDict([
     ("nd_dau_fo", "NĐ dầu FO"), ("nd_dau_do", "NĐ dầu DO"), ("nd_khac", "NĐ khác"),
     ("thuy_dien", "Thủy điện"), ("nhap_khau_tq", "Nhập khẩu TQ"), ("sinh_khoi", "Sinh khối"),
     ("dien_gio", "Điện gió"), ("mt_farm", "ĐMT trang trại"), ("mt_mai_nha", "ĐMT mái nhà"),
+    ("khac_chua_phan_loai", "Khác (chưa phân loại)"),
 ])
 NLTT = ["sinh_khoi", "dien_gio", "mt_farm", "mt_mai_nha"]
 THU = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
