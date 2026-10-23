@@ -3,7 +3,6 @@
 Lấy số liệu vận hành HTĐ quốc gia (chu kỳ 30 phút) từ NSMO, ghi vào docs/data/:
   - phu_tai.csv      : phụ tải toàn quốc và theo miền Bắc/Trung/Nam (MW), theo Báo cáo sản xuất (BCSX)
                        quoc_gia_MW          = series "Quốc gia" của BCSX (GetBcsxChartDataPhuTai)
-                       quoc_gia_trangchu_MW = biểu đồ tương quan phụ tải ở trang chủ NSMO, chỉ để tham khảo
   - co_cau_nguon.csv : công suất phát theo loại hình nguồn (MW), theo BCSX
                        khac_chua_phan_loai  = tổng các loại hình NSMO mới thêm, chưa có cột riêng
 
@@ -37,11 +36,10 @@ CC_PATH = os.path.join(DATA, "co_cau_nguon.csv")
 META_PATH = os.path.join(DATA, "meta.json")
 
 BASE = "https://www.nsmo.vn"
-URL_QG = BASE + "/api/services/app/HomePage/GetBieuDoTuongQuanPT?day={d}"
 URL_MIEN = BASE + "/Dashboard/GetBcsxChartDataPhuTai?ngay={d}"
 URL_NGUON = BASE + "/Dashboard/GetBcsxChartDataCongSuatTheoLoaiHinh?ngay={d}"
 
-PT_COLS = ["ngay", "gio", "quoc_gia_MW", "bac_MW", "trung_MW", "nam_MW", "quoc_gia_trangchu_MW"]
+PT_COLS = ["ngay", "gio", "quoc_gia_MW", "bac_MW", "trung_MW", "nam_MW"]
 
 
 def norm(s):
@@ -106,7 +104,7 @@ def fetch_phu_tai(d, ds):
     """48 dòng phụ tải của ngày d, hoặc None nếu NSMO chưa có đủ số liệu.
 
     Phụ tải toàn quốc và theo miền lấy cùng một nguồn là BCSX, để khớp với số NSMO công bố
-    và cân bằng được với cơ cấu nguồn. Biểu đồ trang chủ chỉ ghi thêm để tham khảo.
+    và cân bằng được với cơ cấu nguồn.
     """
     bcsx = get_json(URL_MIEN.format(d=ds)).get("result") or []
     reg = {}
@@ -121,14 +119,6 @@ def fetch_phu_tai(d, ds):
     if len(reg) < 48:
         return None
 
-    home = {}
-    try:
-        qg = get_json(URL_QG.format(d=ds))
-        for p in (((qg or {}).get("result") or {}).get("data") or {}).get("phuTai") or []:
-            home[p["thoiGian"][11:16]] = p.get("congSuat")
-    except Exception as e:  # thiếu biểu đồ trang chủ không làm hỏng số liệu chính
-        print(f"  {d}: không lấy được biểu đồ trang chủ ({e})", flush=True)
-
     rows = []
     for hh in sorted(reg, key=hour_order):
         r = reg[hh]
@@ -140,10 +130,8 @@ def fetch_phu_tai(d, ds):
             if "qg" not in WARNED:
                 WARNED.add("qg")
                 print("  Cảnh báo: BCSX thiếu series 'Quốc gia', tạm lấy Bắc + Trung + Nam", flush=True)
-        h = home.get(hh)
         rows.append({"ngay": d.isoformat(), "gio": hlab(hh), "quoc_gia_MW": qg_v,
-                     "bac_MW": r["bac_MW"], "trung_MW": r["trung_MW"], "nam_MW": r["nam_MW"],
-                     "quoc_gia_trangchu_MW": "" if h is None else round(float(h), 1)})
+                     "bac_MW": r["bac_MW"], "trung_MW": r["trung_MW"], "nam_MW": r["nam_MW"]})
     if any(float(r["quoc_gia_MW"] or 0) <= 0 for r in rows):
         return None
     return rows
@@ -193,8 +181,20 @@ def load(path):
 
 
 def stale_days(data, col):
-    """Ngày lấy theo cấu trúc cũ (thiếu cột col) -> cần lấy lại. Số liệu cũ vẫn giữ đến khi lấy lại xong."""
-    return {k for k, rows in data.items() if any((r.get(col) or "") == "" for r in rows)}
+    """Ngày lấy theo cấu trúc cũ -> cần lấy lại. Số liệu cũ vẫn giữ đến khi lấy lại xong.
+
+    Dấu hiệu: file có cột col nhưng ngày đó để trống cột này.
+    """
+    return {k for k, rows in data.items() if any(col in r and (r[col] or "") == "" for r in rows)}
+
+
+def pending_from_meta():
+    """Danh sách ngày cần lấy lại còn dở từ lần chạy trước (lưu trong meta.json)."""
+    try:
+        with open(META_PATH, encoding="utf-8") as f:
+            return json.load(f).get("can_lay_lai") or {}
+    except Exception:
+        return {}
 
 
 def save(path, cols, by_day):
@@ -219,10 +219,13 @@ def main():
     a = ap.parse_args()
 
     sets = {}
+    pending = pending_from_meta()
+    # pt: cột quoc_gia_trangchu_MW (đã bỏ) trống = ngày còn lấy theo biểu đồ trang chủ, chưa theo BCSX.
     for n, path, cols, fn, mark in (("pt", PT_PATH, PT_COLS, fetch_phu_tai, "quoc_gia_trangchu_MW"),
                                     ("cc", CC_PATH, CC_COLS, fetch_co_cau, CC_KHAC)):
         data = load(path)
-        sets[n] = {"path": path, "cols": cols, "fn": fn, "data": data, "redo": stale_days(data, mark)}
+        redo = (stale_days(data, mark) | set(pending.get(n) or [])) & set(data)
+        sets[n] = {"path": path, "cols": cols, "fn": fn, "data": data, "redo": redo}
         if sets[n]["redo"]:
             print(f"  {os.path.basename(path)}: {len(sets[n]['redo'])} ngày theo cấu trúc cũ, sẽ lấy lại.", flush=True)
 
@@ -255,6 +258,8 @@ def main():
                 "ngay_cuoi": days[-1] if days else None,
             }
         meta["ngay_cuoi"] = meta["phu_tai.csv"]["ngay_cuoi"]
+        # Giữ danh sách ngày chưa lấy lại xong để lần chạy sau làm tiếp (vì cột đánh dấu cũ đã bị bỏ khi lưu).
+        meta["can_lay_lai"] = {n: sorted(s["redo"]) for n, s in sets.items() if s["redo"]}
         with open(META_PATH, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=1)
 
