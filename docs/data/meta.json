@@ -1,16 +1,16 @@
 {
  "nguon": "https://www.nsmo.vn/dashboard/tonghop",
- "cap_nhat_luc": "2026-11-27T17:58+07:00",
+ "cap_nhat_luc": "2026-11-28T09:15+07:00",
  "phu_tai.csv": {
-  "so_ngay": 330,
+  "so_ngay": 331,
   "ngay_dau": "2026-01-01",
-  "ngay_cuoi": "2026-11-26"
+  "ngay_cuoi": "2026-11-27"
  },
  "co_cau_nguon.csv": {
-  "so_ngay": 330,
+  "so_ngay": 331,
   "ngay_dau": "2026-01-01",
-  "ngay_cuoi": "2026-11-26"
+  "ngay_cuoi": "2026-11-27"
  },
- "ngay_cuoi": "2026-11-26",
+ "ngay_cuoi": "2026-11-27",
  "can_lay_lai": {}
 }
